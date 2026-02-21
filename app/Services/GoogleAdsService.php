@@ -12,8 +12,8 @@ class GoogleAdsService
 
     public function __construct()
     {
-        $this->developerToken = config('services.google.developer_token', '');
-        $this->managerAccountId = config('services.google.manager_account_id', '');
+        $this->developerToken = config('services.google.developer_token') ?? '';
+        $this->managerAccountId = config('services.google.manager_account_id') ?? '';
     }
 
     private function getClient(): Google_Client
