@@ -10,70 +10,71 @@
         @media(max-width: 900px) { .notes-page { grid-template-columns: 1fr; } }
 
         .note-composer {
-            background: linear-gradient(145deg, #1e1e2e, #1a1a2a);
+            background: var(--bg-card);
             border-radius: 16px;
             padding: 24px;
-            border: 1px solid rgba(255,255,255,0.06);
+            border: 1px solid var(--border);
             position: sticky;
             top: 20px;
             height: fit-content;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
         }
-        .note-composer h3 { margin: 0 0 16px; color: #e2e8f0; font-size: 16px; font-weight: 600; }
+        .note-composer h3 { margin: 0 0 16px; color: var(--text); font-size: 16px; font-weight: 600; }
         .note-composer textarea {
-            width: 100%; background: #13131f; color: #e2e8f0;
-            border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;
+            width: 100%; background: var(--bg); color: var(--text);
+            border: 1px solid var(--border); border-radius: 10px;
             padding: 14px; font-size: 14px; resize: vertical; font-family: inherit;
             min-height: 120px; transition: border-color 0.2s;
         }
-        .note-composer textarea:focus { border-color: #818cf8; outline: none; }
-        .note-composer textarea::placeholder { color: #4a5568; }
+        .note-composer textarea:focus { border-color: var(--primary); outline: none; }
+        .note-composer textarea::placeholder { color: var(--text-muted); }
         .composer-controls { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
         .composer-row { display: flex; gap: 8px; }
         .composer-select {
-            flex: 1; background: #13131f; color: #e2e8f0;
-            border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
+            flex: 1; background: var(--bg); color: var(--text);
+            border: 1px solid var(--border); border-radius: 8px;
             padding: 8px 12px; font-size: 13px; cursor: pointer;
         }
         .save-btn {
-            background: linear-gradient(135deg, #818cf8, #6366f1); color: #fff;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff;
             border: none; padding: 10px 24px; border-radius: 10px; cursor: pointer;
             font-size: 14px; font-weight: 600; transition: all 0.2s;
             width: 100%;
         }
-        .save-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(99,102,241,0.4); }
+        .save-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(238,49,79,0.3); }
         .save-btn:active { transform: translateY(0); }
 
         .notes-feed { display: flex; flex-direction: column; gap: 12px; }
         .notes-feed-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-        .notes-feed-header h3 { margin: 0; color: #e2e8f0; font-size: 16px; font-weight: 600; }
-        .note-count { background: #818cf8; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+        .notes-feed-header h3 { margin: 0; color: var(--text); font-size: 16px; font-weight: 600; }
+        .note-count { background: var(--primary); color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
 
         .note-card {
-            background: #1e1e2e; border: 1px solid rgba(255,255,255,0.06);
+            background: var(--bg-card); border: 1px solid var(--border);
             border-radius: 12px; padding: 18px; transition: all 0.2s;
-            position: relative;
+            position: relative; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
         }
-        .note-card:hover { border-color: rgba(129,140,248,0.3); transform: translateY(-1px); }
+        .note-card:hover { border-color: var(--primary-light); box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-1px); }
         .note-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
         .note-type-badge {
             font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 600;
             text-transform: uppercase; letter-spacing: 0.5px;
         }
-        .note-type-badge.general { background: rgba(99,102,241,0.15); color: #818cf8; }
-        .note-type-badge.client { background: rgba(16,185,129,0.15); color: #10b981; }
-        .note-type-badge.campaign { background: rgba(245,158,11,0.15); color: #f59e0b; }
-        .note-time { color: #4a5568; font-size: 12px; }
-        .note-content { color: #cbd5e1; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+        .note-type-badge.general { background: var(--primary-subtle); color: var(--primary); }
+        .note-type-badge.client { background: rgba(16,185,129,0.1); color: #059669; }
+        .note-type-badge.campaign { background: rgba(245,158,11,0.1); color: #d97706; }
+        .note-time { color: var(--text-muted); font-size: 12px; }
+        .note-content { color: var(--text); font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
         .note-delete {
             position: absolute; top: 14px; right: 14px;
-            background: none; border: none; color: #4a5568; cursor: pointer;
+            background: none; border: none; color: var(--text-muted); cursor: pointer;
             padding: 4px 8px; border-radius: 6px; font-size: 14px; transition: all 0.2s;
         }
-        .note-delete:hover { background: rgba(239,68,68,0.15); color: #ef4444; }
+        .note-delete:hover { background: rgba(239,68,68,0.1); color: #ef4444; }
 
         .empty-notes {
-            text-align: center; padding: 60px 20px; color: #4a5568;
-            background: #1e1e2e; border-radius: 12px; border: 1px dashed rgba(255,255,255,0.08);
+            text-align: center; padding: 60px 20px; color: var(--text-muted);
+            background: var(--bg-card); border-radius: 12px; border: 1px dashed var(--border);
         }
         .empty-notes .empty-icon { font-size: 48px; margin-bottom: 12px; }
         .empty-notes p { margin: 0; font-size: 14px; }
