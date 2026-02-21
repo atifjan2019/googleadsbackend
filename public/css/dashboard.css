@@ -1389,11 +1389,18 @@ body {
     .keywords-row .table-card {
         min-width: 100%;
     }
+
+    .budget-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
 
 @media (max-width: 768px) {
     .sidebar {
         transform: translateX(-100%);
+        position: fixed;
+        z-index: 1000;
+        height: 100vh;
     }
 
     .sidebar.open {
@@ -1409,36 +1416,91 @@ body {
     }
 
     .top-bar {
-        padding: 0 16px;
+        padding: 0 12px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .top-bar-left {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .page-title {
+        font-size: 18px;
+    }
+
+    .page-subtitle {
+        font-size: 12px;
     }
 
     .content-area {
-        padding: 16px;
-    }
-
-    .kpi-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
-    }
-
-    .kpi-card {
-        padding: 16px;
-    }
-
-    .kpi-value {
-        font-size: 24px;
+        padding: 12px;
     }
 
     .top-bar-right {
-        gap: 8px;
+        gap: 6px;
+        flex-wrap: wrap;
     }
 
     .last-synced span:not(.sync-dot) {
         display: none;
     }
 
+    .kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+
+    .kpi-card {
+        padding: 14px;
+    }
+
+    .kpi-value {
+        font-size: 22px;
+    }
+
     .budget-grid {
         grid-template-columns: 1fr;
+    }
+
+    /* Table scroll on mobile */
+    .table-card {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .table-card table {
+        min-width: 700px;
+    }
+
+    /* Filters stack on mobile */
+    .client-selector {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 8px !important;
+    }
+
+    .client-selector > div {
+        width: 100%;
+    }
+
+    .client-selector select {
+        width: 100%;
+    }
+
+    /* Notes page */
+    .notes-page {
+        grid-template-columns: 1fr !important;
+    }
+
+    .note-composer {
+        position: static !important;
+    }
+
+    /* Alerts */
+    .alert-card {
+        flex-wrap: wrap;
     }
 }
 
@@ -1448,10 +1510,31 @@ body {
     }
 
     .page-title {
-        font-size: 18px;
+        font-size: 16px;
     }
 
     .budget-numbers {
         flex-wrap: wrap;
+    }
+
+    .budget-card-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .top-bar-right {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .date-select {
+        font-size: 12px;
+        padding: 6px 8px;
+    }
+
+    #refreshDataBtn {
+        font-size: 12px;
+        padding: 6px 10px;
     }
 }
