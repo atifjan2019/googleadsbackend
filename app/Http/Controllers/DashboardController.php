@@ -102,7 +102,11 @@ class DashboardController extends Controller
         if (!$data) {
             $stale = ApiCache::getCached($cacheKey);
             if ($stale) return response()->json($stale);
-            $data = $this->getMockOverviewData();
+            $data = [
+                'kpis' => ['total_spend' => 0, 'total_conversions' => 0, 'total_revenue' => 0, 'avg_cpa' => 0, 'overall_roas' => 0, 'total_clicks' => 0],
+                'clients' => [],
+                'chartData' => ['labels' => [], 'revenue' => [], 'spend' => []],
+            ];
         }
 
         // Save to SQLite (replaces old data)
@@ -395,7 +399,7 @@ class DashboardController extends Controller
         if (!$data) {
             $stale = ApiCache::getCached($cacheKey);
             if ($stale) return response()->json($stale);
-            $data = ['clients' => $this->getMockClients(), 'campaigns' => $this->getMockCampaigns()];
+            $data = ['clients' => [], 'campaigns' => []];
         }
 
         ApiCache::setCache($cacheKey, $data);
@@ -447,14 +451,9 @@ class DashboardController extends Controller
         if (!$data) {
             $stale = ApiCache::getCached($cacheKey);
             if ($stale) return response()->json($stale);
-            $kws = $this->getMockKeywords();
             $data = [
-                'keywords' => $kws,
-                'kpis' => [
-                    'top_count' => count($kws['top']),
-                    'avg_cpc' => '£2.14',
-                    'avg_qs' => '7.2',
-                ],
+                'keywords' => ['top' => [], 'wasted' => []],
+                'kpis' => ['top_count' => 0, 'avg_cpc' => '£0.00', 'avg_qs' => 'N/A'],
             ];
         }
 
