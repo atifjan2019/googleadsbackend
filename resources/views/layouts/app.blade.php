@@ -115,8 +115,8 @@
                 @if(request()->routeIs('dashboard.overview'))
                 <div class="date-filter">
                     <select id="dateRange" class="date-select">
-                        <option value="today">Today</option>
-                        <option value="7days" selected>Last 7 Days</option>
+                        <option value="today" selected>Today</option>
+                        <option value="7days">Last 7 Days</option>
                         <option value="30days">Last 30 Days</option>
                         <option value="90days">Last 90 Days</option>
                     </select>

@@ -269,7 +269,7 @@
 
             function getRange() {
                 const sel = document.getElementById('dateRange');
-                return sel ? sel.value : 'LAST_7_DAYS';
+                return sel ? sel.value : 'TODAY';
             }
 
             function loadOverviewData(fresh) {
