@@ -55,12 +55,16 @@ class GoogleAdsService
 
         $url = "https://googleads.googleapis.com/v23/customers/{$cleanCustomerId}/googleAds:searchStream";
 
+        set_time_limit(120);
+
         $ch = curl_init();
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode(['query' => $gaqlQuery]),
+            CURLOPT_TIMEOUT => 60,
+            CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_HTTPHEADER => [
                 'Content-Type: application/json',
                 'Authorization: Bearer ' . $accessToken,
