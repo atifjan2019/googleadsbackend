@@ -3,7 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Services\GoogleAdsService;
+use App\Models\Note;
+use App\Models\ApiCache;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class DashboardController extends Controller
 {
@@ -21,7 +24,16 @@ class DashboardController extends Controller
      */
     private function getDateRange(Request $request): string
     {
-        return match ($request->get('range', '7days')) {
+        $range = $request->get('range', 'LAST_7_DAYS');
+
+        // Accept GAQL values directly
+        $validRanges = ['TODAY', 'YESTERDAY', 'LAST_7_DAYS', 'LAST_14_DAYS', 'LAST_30_DAYS', 'THIS_MONTH', 'LAST_MONTH', 'LAST_90_DAYS'];
+        if (in_array($range, $validRanges)) {
+            return $range;
+        }
+
+        // Legacy mapping
+        return match ($range) {
             'today' => 'TODAY',
             '7days' => 'LAST_7_DAYS',
             '30days' => 'LAST_30_DAYS',
@@ -31,22 +43,153 @@ class DashboardController extends Controller
     }
 
     /**
-     * Main dashboard overview page.
+     * Main dashboard overview page — renders immediately with empty defaults.
+     * Data is loaded via AJAX from /api/overview.
      */
     public function overview(Request $request)
     {
-        $dateRange = $this->getDateRange($request);
+        $kpis = [
+            'total_spend' => 0,
+            'total_conversions' => 0,
+            'total_revenue' => 0,
+            'avg_cpa' => 0,
+            'overall_roas' => 0,
+            'total_clicks' => 0,
+        ];
 
-        if ($this->useLiveData) {
-            try {
-                return $this->liveOverview($dateRange);
-            } catch (\Exception $e) {
-                \Log::error('Google Ads API error: ' . $e->getMessage());
-                // Fall back to mock data
+        $chartData = [
+            'labels' => [],
+            'revenue' => [],
+            'spend' => [],
+        ];
+
+        return view('dashboard.overview', [
+            'clients' => [],
+            'kpis' => $kpis,
+            'chartData' => $chartData,
+            'activeAlerts' => 0,
+            'alerts' => [],
+            'isLive' => $this->useLiveData,
+        ]);
+    }
+
+    /**
+     * API endpoint: returns overview data as JSON (cached for 15 minutes).
+     * Pass ?fresh=1 to bypass cache.
+     */
+    public function apiOverview(Request $request)
+    {
+        $dateRange = $this->getDateRange($request);
+        $cacheKey = 'overview_data_' . $dateRange;
+
+        // Clear cache if fresh data requested
+        if ($request->get('fresh')) {
+            Cache::forget($cacheKey);
+        }
+
+        $data = Cache::remember($cacheKey, now()->addHour(), function () use ($dateRange) {
+            if ($this->useLiveData) {
+                try {
+                    return $this->fetchLiveOverviewData($dateRange);
+                } catch (\Exception $e) {
+                    \Log::error('Google Ads API error: ' . $e->getMessage());
+                }
+            }
+            return $this->getMockOverviewData();
+        });
+
+        return response()->json($data);
+    }
+
+    /**
+     * Fetch live overview data from Google Ads API.
+     */
+    private function fetchLiveOverviewData(string $dateRange): array
+    {
+        $accounts = $this->googleAds->getCustomerAccounts();
+        $clients = [];
+        $allChartData = ['labels' => [], 'revenue' => [], 'spend' => []];
+
+        foreach ($accounts as $account) {
+            $summary = $this->googleAds->getAccountSummary($account['id'], $dateRange);
+            $campaigns = $this->googleAds->getCampaignPerformance($account['id'], $dateRange);
+            $totalBudget = array_sum(array_column($campaigns, 'budget')) * 30;
+
+            $status = 'active';
+            if ($summary['roas'] < 1.5) $status = 'danger';
+            elseif ($summary['roas'] < 3) $status = 'warning';
+
+            $clients[] = [
+                'id' => $account['id'],
+                'name' => $account['name'],
+                'industry' => '',
+                'status' => $status,
+                'spend' => $summary['spend'],
+                'budget' => max($totalBudget, $summary['spend']),
+                'clicks' => $summary['clicks'],
+                'impressions' => $summary['impressions'],
+                'conversions' => $summary['conversions'],
+                'revenue' => $summary['revenue'],
+                'cpa' => $summary['cpa'],
+                'ctr' => $summary['ctr'],
+                'roas' => $summary['roas'],
+            ];
+
+            if (empty($allChartData['labels'])) {
+                $allChartData = $this->googleAds->getDailyMetrics($account['id'], $dateRange);
+            } else {
+                $daily = $this->googleAds->getDailyMetrics($account['id'], $dateRange);
+                foreach ($daily['revenue'] as $i => $v) {
+                    $allChartData['revenue'][$i] = ($allChartData['revenue'][$i] ?? 0) + $v;
+                    $allChartData['spend'][$i] = ($allChartData['spend'][$i] ?? 0) + $daily['spend'][$i];
+                }
             }
         }
 
-        return $this->mockOverview();
+        $totalSpend = array_sum(array_column($clients, 'spend'));
+        $totalConversions = array_sum(array_column($clients, 'conversions'));
+        $totalRevenue = array_sum(array_column($clients, 'revenue'));
+
+        return [
+            'clients' => $clients,
+            'kpis' => [
+                'total_spend' => $totalSpend,
+                'total_conversions' => $totalConversions,
+                'total_revenue' => $totalRevenue,
+                'avg_cpa' => $totalConversions > 0 ? round($totalSpend / $totalConversions, 2) : 0,
+                'overall_roas' => $totalSpend > 0 ? round($totalRevenue / $totalSpend, 2) : 0,
+                'total_clicks' => array_sum(array_column($clients, 'clicks')),
+            ],
+            'chartData' => $allChartData,
+        ];
+    }
+
+    /**
+     * Get mock overview data as fallback.
+     */
+    private function getMockOverviewData(): array
+    {
+        $clients = $this->getMockClients();
+        $totalSpend = array_sum(array_column($clients, 'spend'));
+        $totalConversions = array_sum(array_column($clients, 'conversions'));
+        $totalRevenue = array_sum(array_column($clients, 'revenue'));
+
+        return [
+            'clients' => $clients,
+            'kpis' => [
+                'total_spend' => $totalSpend,
+                'total_conversions' => $totalConversions,
+                'total_revenue' => $totalRevenue,
+                'avg_cpa' => $totalConversions > 0 ? round($totalSpend / $totalConversions, 2) : 0,
+                'overall_roas' => $totalSpend > 0 ? round($totalRevenue / $totalSpend, 2) : 0,
+                'total_clicks' => array_sum(array_column($clients, 'clicks')),
+            ],
+            'chartData' => [
+                'labels' => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                'revenue' => [7200, 8100, 6800, 9400, 8900, 5200, 12060],
+                'spend' => [1640, 1890, 1720, 2100, 1980, 1340, 2177],
+            ],
+        ];
     }
 
     /**
@@ -188,184 +331,180 @@ class DashboardController extends Controller
     }
 
     /**
-     * Campaigns page.
+     * Campaigns page — renders immediately.
      */
     public function campaigns(Request $request)
     {
-        $dateRange = $this->getDateRange($request);
-        $clientId = $request->get('client', 'all');
-
-        if ($this->useLiveData) {
-            try {
-                $accounts = $this->googleAds->getCustomerAccounts();
-                $clients = $accounts;
-                $allCampaigns = [];
-
-                $targetAccounts = $clientId !== 'all'
-                    ? array_filter($accounts, fn($a) => $a['id'] == $clientId)
-                    : $accounts;
-
-                foreach ($targetAccounts as $account) {
-                    $campaigns = $this->googleAds->getCampaignPerformance($account['id'], $dateRange);
-                    foreach ($campaigns as &$c) {
-                        $c['client_id'] = $account['id'];
-                        $c['client_name'] = $account['name'];
-                    }
-                    $allCampaigns = array_merge($allCampaigns, $campaigns);
-                }
-
-                return view('dashboard.campaigns', [
-                    'clients' => $clients,
-                    'campaigns' => $allCampaigns,
-                    'clientId' => $clientId,
-                    'isLive' => true,
-                ]);
-            } catch (\Exception $e) {
-                \Log::error('Google Ads API error: ' . $e->getMessage());
-            }
-        }
-
-        return $this->mockCampaigns($request);
+        return view('dashboard.campaigns', [
+            'clients' => [],
+            'campaigns' => [],
+            'clientId' => 'all',
+            'isLive' => $this->useLiveData,
+        ]);
     }
 
     /**
-     * Keywords page.
+     * API endpoint: returns campaigns data as JSON.
+     */
+    public function apiCampaigns(Request $request)
+    {
+        $dateRange = $this->getDateRange($request);
+        $clientId = $request->get('client', 'all');
+        $cacheKey = 'campaigns_data_' . $dateRange . '_' . $clientId;
+
+        if ($request->get('fresh')) {
+            Cache::forget($cacheKey);
+        }
+
+        $data = Cache::remember($cacheKey, now()->addHour(), function () use ($dateRange, $clientId) {
+            if ($this->useLiveData) {
+                try {
+                    $accounts = $this->googleAds->getCustomerAccounts();
+                    $allCampaigns = [];
+
+                    $targetAccounts = $clientId !== 'all'
+                        ? array_filter($accounts, fn($a) => $a['id'] == $clientId)
+                        : $accounts;
+
+                    foreach ($targetAccounts as $account) {
+                        $campaigns = $this->googleAds->getCampaignPerformance($account['id'], $dateRange);
+                        foreach ($campaigns as &$c) {
+                            $c['client_id'] = $account['id'];
+                            $c['client_name'] = $account['name'];
+                        }
+                        $allCampaigns = array_merge($allCampaigns, $campaigns);
+                    }
+
+                    return ['clients' => $accounts, 'campaigns' => $allCampaigns];
+                } catch (\Exception $e) {
+                    \Log::error('Google Ads API error: ' . $e->getMessage());
+                }
+            }
+
+            return ['clients' => $this->getMockClients(), 'campaigns' => $this->getMockCampaigns()];
+        });
+
+        return response()->json($data);
+    }
+
+    /**
+     * Keywords page — renders immediately.
      */
     public function keywords(Request $request)
     {
-        $dateRange = $this->getDateRange($request);
-
-        if ($this->useLiveData) {
-            try {
-                $accounts = $this->googleAds->getCustomerAccounts();
-                $allKeywords = ['top' => [], 'wasted' => []];
-
-                foreach ($accounts as $account) {
-                    $kws = $this->googleAds->getKeywordPerformance($account['id'], $dateRange);
-                    $allKeywords['top'] = array_merge($allKeywords['top'], $kws['top']);
-                    $allKeywords['wasted'] = array_merge($allKeywords['wasted'], $kws['wasted']);
-                }
-
-                usort($allKeywords['top'], fn($a, $b) => $b['conversions'] <=> $a['conversions']);
-                usort($allKeywords['wasted'], fn($a, $b) => $b['spend'] <=> $a['spend']);
-
-                $allKeywords['top'] = array_slice($allKeywords['top'], 0, 15);
-                $allKeywords['wasted'] = array_slice($allKeywords['wasted'], 0, 10);
-
-                $totalWasted = array_sum(array_column($allKeywords['wasted'], 'spend'));
-                $allCpcs = array_column($allKeywords['top'], 'cpa');
-                $allQs = array_filter(array_column($allKeywords['top'], 'qs'));
-
-                $kpis = [
-                    'top_count' => count($allKeywords['top']),
-                    'avg_cpc' => '£' . (count($allCpcs) > 0 ? number_format(array_sum($allCpcs) / count($allCpcs), 2) : '0.00'),
-                    'wasted_spend' => '£' . number_format($totalWasted),
-                    'avg_qs' => count($allQs) > 0 ? number_format(array_sum($allQs) / count($allQs), 1) : 'N/A',
-                ];
-
-                return view('dashboard.keywords', [
-                    'clients' => $accounts,
-                    'keywords' => $allKeywords,
-                    'kpis' => $kpis,
-                    'isLive' => true,
-                ]);
-            } catch (\Exception $e) {
-                \Log::error('Google Ads API error: ' . $e->getMessage());
-            }
-        }
-
-        return $this->mockKeywords();
+        return view('dashboard.keywords');
     }
 
     /**
-     * Budget tracking page.
+     * API endpoint: returns keywords data as JSON.
+     */
+    public function apiKeywords(Request $request)
+    {
+        $dateRange = $this->getDateRange($request);
+        $customerId = $request->get('customer_id', '');
+        $cacheKey = 'keywords_data_' . $dateRange . '_' . $customerId;
+
+        if ($request->get('fresh')) {
+            Cache::forget($cacheKey);
+        }
+
+        $data = Cache::remember($cacheKey, now()->addHour(), function () use ($dateRange, $customerId) {
+            if ($this->useLiveData && $customerId) {
+                try {
+                    $kws = $this->googleAds->getKeywordPerformance($customerId, $dateRange);
+
+                    $totalWasted = array_sum(array_column($kws['wasted'], 'spend'));
+                    $allCpas = array_column($kws['top'], 'cpa');
+                    $allQs = array_filter(array_column($kws['top'], 'qs'));
+
+                    return [
+                        'keywords' => $kws,
+                        'kpis' => [
+                            'top_count' => count($kws['top']),
+                            'avg_cpc' => '£' . (count($allCpas) > 0 ? number_format(array_sum($allCpas) / count($allCpas), 2) : '0.00'),
+                            'wasted_spend' => '£' . number_format($totalWasted),
+                            'avg_qs' => count($allQs) > 0 ? number_format(array_sum($allQs) / count($allQs), 1) : 'N/A',
+                        ],
+                    ];
+                } catch (\Exception $e) {
+                    \Log::error('Google Ads API error: ' . $e->getMessage());
+                }
+            }
+
+            // Mock data
+            $kws = $this->getMockKeywords();
+            return [
+                'keywords' => $kws,
+                'kpis' => [
+                    'top_count' => count($kws['top']),
+                    'avg_cpc' => '£2.14',
+                    'wasted_spend' => '£' . number_format(array_sum(array_column($kws['wasted'], 'spend'))),
+                    'avg_qs' => '7.2',
+                ],
+            ];
+        });
+
+        return response()->json($data);
+    }
+
+    /**
+     * Budget tracking page — renders immediately.
      */
     public function budget(Request $request)
     {
-        $dateRange = $this->getDateRange($request);
-
-        if ($this->useLiveData) {
-            try {
-                $accounts = $this->googleAds->getCustomerAccounts();
-                $clients = [];
-
-                foreach ($accounts as $account) {
-                    $summary = $this->googleAds->getAccountSummary($account['id'], $dateRange);
-                    $campaigns = $this->googleAds->getCampaignPerformance($account['id'], $dateRange);
-                    $totalBudget = array_sum(array_column($campaigns, 'budget')) * 30;
-
-                    $clients[] = [
-                        'id' => $account['id'],
-                        'name' => $account['name'],
-                        'spend' => $summary['spend'],
-                        'budget' => max($totalBudget, $summary['spend'] + 100),
-                        'clicks' => $summary['clicks'],
-                        'conversions' => $summary['conversions'],
-                        'revenue' => $summary['revenue'],
-                        'roas' => $summary['roas'],
-                    ];
-                }
-
-                return view('dashboard.budget', ['clients' => $clients, 'isLive' => true]);
-            } catch (\Exception $e) {
-                \Log::error('Google Ads API error: ' . $e->getMessage());
-            }
-        }
-
-        return $this->mockBudget();
+        return view('dashboard.budget', ['clients' => [], 'isLive' => $this->useLiveData]);
     }
 
     /**
-     * Alerts page.
+     * Alerts page — renders immediately.
      */
     public function alerts(Request $request)
     {
-        if ($this->useLiveData) {
-            try {
-                $accounts = $this->googleAds->getCustomerAccounts();
-                $clients = [];
-
-                foreach ($accounts as $account) {
-                    $summary = $this->googleAds->getAccountSummary($account['id']);
-                    $summary['name'] = $account['name'];
-                    $summary['budget'] = 0;
-                    $clients[] = $summary;
-                }
-
-                $alerts = $this->generateAlerts($clients);
-                if (empty($alerts)) {
-                    $alerts = [['id' => 1, 'type' => 'success', 'icon' => '🟢', 'title' => 'All accounts healthy', 'message' => 'No issues detected across your client accounts.', 'time' => 'Now', 'client' => 'All']];
-                }
-
-                return view('dashboard.alerts', ['alerts' => $alerts, 'isLive' => true]);
-            } catch (\Exception $e) {
-                \Log::error('Google Ads API error: ' . $e->getMessage());
-            }
-        }
-
-        return view('dashboard.alerts', ['alerts' => $this->getMockAlerts()]);
+        return view('dashboard.alerts', ['alerts' => [], 'isLive' => $this->useLiveData]);
     }
 
     /**
-     * Notes page.
+     * Notes page — renders immediately.
      */
     public function notes()
     {
-        $clients = [];
-        if ($this->useLiveData) {
-            try {
-                $clients = $this->googleAds->getCustomerAccounts();
-            } catch (\Exception $e) {
-                // Use mock
-            }
-        }
+        return view('dashboard.notes');
+    }
 
-        if (empty($clients)) {
-            $clients = array_map(fn($c) => ['id' => $c['id'], 'name' => $c['name']], $this->getMockClients());
+    /**
+     * API: list notes.
+     */
+    public function apiNotesList(Request $request)
+    {
+        $query = Note::orderBy('created_at', 'desc');
+        if ($request->get('client_id')) {
+            $query->where('client_id', $request->get('client_id'));
         }
+        return response()->json($query->get());
+    }
 
-        $notes = $this->getMockNotes();
-        return view('dashboard.notes', compact('clients', 'notes'));
+    /**
+     * API: store a note.
+     */
+    public function apiNotesStore(Request $request)
+    {
+        $request->validate(['content' => 'required|string']);
+        $note = Note::create([
+            'content' => $request->input('content'),
+            'client_id' => $request->input('client_id'),
+            'campaign_id' => $request->input('campaign_id'),
+            'type' => $request->input('type', 'general'),
+        ]);
+        return response()->json($note, 201);
+    }
+
+    /**
+     * API: delete a note.
+     */
+    public function apiNotesDelete($id)
+    {
+        Note::findOrFail($id)->delete();
+        return response()->json(['success' => true]);
     }
 
     // ============================
@@ -457,15 +596,15 @@ class DashboardController extends Controller
     private function getMockCampaigns()
     {
         return [
-            ['id' => 1, 'client_id' => 1, 'client_name' => 'Birmingham Kitchens', 'name' => 'Brand - Birmingham Kitchens', 'type' => 'Search', 'status' => 'active', 'spend' => 820, 'impressions' => 9200, 'clicks' => 612, 'conversions' => 34, 'revenue' => 7400, 'ctr' => 6.65, 'cpa' => 24.12, 'roas' => 9.02],
-            ['id' => 2, 'client_id' => 1, 'client_name' => 'Birmingham Kitchens', 'name' => 'Kitchen Renovation Services', 'type' => 'Search', 'status' => 'active', 'spend' => 1440, 'impressions' => 12800, 'clicks' => 845, 'conversions' => 38, 'revenue' => 8200, 'ctr' => 6.60, 'cpa' => 37.89, 'roas' => 5.69],
-            ['id' => 3, 'client_id' => 1, 'client_name' => 'Birmingham Kitchens', 'name' => 'Display - Remarketing', 'type' => 'Display', 'status' => 'warning', 'spend' => 580, 'impressions' => 4200, 'clicks' => 245, 'conversions' => 9, 'revenue' => 1950, 'ctr' => 5.83, 'cpa' => 64.44, 'roas' => 3.36],
-            ['id' => 4, 'client_id' => 2, 'client_name' => 'London Dental Care', 'name' => 'Brand - London Dental', 'type' => 'Search', 'status' => 'active', 'spend' => 640, 'impressions' => 7200, 'clicks' => 487, 'conversions' => 28, 'revenue' => 5600, 'ctr' => 6.76, 'cpa' => 22.86, 'roas' => 8.75],
-            ['id' => 5, 'client_id' => 2, 'client_name' => 'London Dental Care', 'name' => 'Dental Implants London', 'type' => 'Search', 'status' => 'active', 'spend' => 1340, 'impressions' => 8400, 'clicks' => 512, 'conversions' => 24, 'revenue' => 4800, 'ctr' => 6.10, 'cpa' => 55.83, 'roas' => 3.58],
-            ['id' => 6, 'client_id' => 3, 'client_name' => 'Manchester Plumbing', 'name' => 'Plumbing Services Manchester', 'type' => 'Search', 'status' => 'active', 'spend' => 980, 'impressions' => 8400, 'clicks' => 523, 'conversions' => 31, 'revenue' => 5400, 'ctr' => 6.23, 'cpa' => 31.61, 'roas' => 5.51],
-            ['id' => 7, 'client_id' => 4, 'client_name' => 'Bristol Auto Repairs', 'name' => 'Auto Repair Services', 'type' => 'Search', 'status' => 'active', 'spend' => 1200, 'impressions' => 11200, 'clicks' => 567, 'conversions' => 22, 'revenue' => 3900, 'ctr' => 5.06, 'cpa' => 54.55, 'roas' => 3.25],
-            ['id' => 8, 'client_id' => 5, 'client_name' => 'Leeds Legal Services', 'name' => 'Personal Injury Claims', 'type' => 'Search', 'status' => 'active', 'spend' => 840, 'impressions' => 6200, 'clicks' => 342, 'conversions' => 32, 'revenue' => 4800, 'ctr' => 5.52, 'cpa' => 26.25, 'roas' => 5.71],
-            ['id' => 9, 'client_id' => 6, 'client_name' => 'Edinburgh Fitness', 'name' => 'Personal Training', 'type' => 'Search', 'status' => 'danger', 'spend' => 427, 'impressions' => 4100, 'clicks' => 178, 'conversions' => 4, 'revenue' => 320, 'ctr' => 4.34, 'cpa' => 106.75, 'roas' => 0.75],
+            ['id' => 1, 'client_id' => 1, 'client_name' => 'Birmingham Kitchens', 'name' => 'Brand - Birmingham Kitchens', 'type' => 'Search', 'status' => 'active', 'spend' => 820, 'impressions' => 9200, 'clicks' => 612, 'conversions' => 34, 'revenue' => 7400, 'ctr' => 6.65, 'cpa' => 24.12, 'roas' => 9.02, 'phone_calls' => 18],
+            ['id' => 2, 'client_id' => 1, 'client_name' => 'Birmingham Kitchens', 'name' => 'Kitchen Renovation Services', 'type' => 'Search', 'status' => 'active', 'spend' => 1440, 'impressions' => 12800, 'clicks' => 845, 'conversions' => 38, 'revenue' => 8200, 'ctr' => 6.60, 'cpa' => 37.89, 'roas' => 5.69, 'phone_calls' => 22],
+            ['id' => 3, 'client_id' => 1, 'client_name' => 'Birmingham Kitchens', 'name' => 'Display - Remarketing', 'type' => 'Display', 'status' => 'warning', 'spend' => 580, 'impressions' => 4200, 'clicks' => 245, 'conversions' => 9, 'revenue' => 1950, 'ctr' => 5.83, 'cpa' => 64.44, 'roas' => 3.36, 'phone_calls' => 3],
+            ['id' => 4, 'client_id' => 2, 'client_name' => 'London Dental Care', 'name' => 'Brand - London Dental', 'type' => 'Search', 'status' => 'active', 'spend' => 640, 'impressions' => 7200, 'clicks' => 487, 'conversions' => 28, 'revenue' => 5600, 'ctr' => 6.76, 'cpa' => 22.86, 'roas' => 8.75, 'phone_calls' => 15],
+            ['id' => 5, 'client_id' => 2, 'client_name' => 'London Dental Care', 'name' => 'Dental Implants London', 'type' => 'Search', 'status' => 'active', 'spend' => 1340, 'impressions' => 8400, 'clicks' => 512, 'conversions' => 24, 'revenue' => 4800, 'ctr' => 6.10, 'cpa' => 55.83, 'roas' => 3.58, 'phone_calls' => 11],
+            ['id' => 6, 'client_id' => 3, 'client_name' => 'Manchester Plumbing', 'name' => 'Plumbing Services Manchester', 'type' => 'Search', 'status' => 'active', 'spend' => 980, 'impressions' => 8400, 'clicks' => 523, 'conversions' => 31, 'revenue' => 5400, 'ctr' => 6.23, 'cpa' => 31.61, 'roas' => 5.51, 'phone_calls' => 19],
+            ['id' => 7, 'client_id' => 4, 'client_name' => 'Bristol Auto Repairs', 'name' => 'Auto Repair Services', 'type' => 'Search', 'status' => 'active', 'spend' => 1200, 'impressions' => 11200, 'clicks' => 567, 'conversions' => 22, 'revenue' => 3900, 'ctr' => 5.06, 'cpa' => 54.55, 'roas' => 3.25, 'phone_calls' => 8],
+            ['id' => 8, 'client_id' => 5, 'client_name' => 'Leeds Legal Services', 'name' => 'Personal Injury Claims', 'type' => 'Search', 'status' => 'active', 'spend' => 840, 'impressions' => 6200, 'clicks' => 342, 'conversions' => 32, 'revenue' => 4800, 'ctr' => 5.52, 'cpa' => 26.25, 'roas' => 5.71, 'phone_calls' => 14],
+            ['id' => 9, 'client_id' => 6, 'client_name' => 'Edinburgh Fitness', 'name' => 'Personal Training', 'type' => 'Search', 'status' => 'danger', 'spend' => 427, 'impressions' => 4100, 'clicks' => 178, 'conversions' => 4, 'revenue' => 320, 'ctr' => 4.34, 'cpa' => 106.75, 'roas' => 0.75, 'phone_calls' => 2],
         ];
     }
 

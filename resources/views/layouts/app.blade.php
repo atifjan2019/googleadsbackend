@@ -122,8 +122,16 @@
                 </div>
                 <div class="last-synced">
                     <span class="sync-dot"></span>
-                    <span>Synced just now</span>
+                    <span id="syncStatus">Synced just now</span>
                 </div>
+                <button id="refreshDataBtn" onclick="refreshData()" style="background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:var(--radius-xs);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.2s;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="refreshIcon">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <polyline points="1 20 1 14 7 14"></polyline>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                    Refresh
+                </button>
             </div>
         </header>
 
@@ -136,6 +144,15 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="{{ asset('js/dashboard.js') }}"></script>
     @stack('scripts')
+
+    <script>
+        // Auto-refresh data every 1 hour
+        setInterval(function() {
+            if (typeof refreshData === 'function') {
+                refreshData();
+            }
+        }, 3600000);
+    </script>
 </body>
 
 </html>

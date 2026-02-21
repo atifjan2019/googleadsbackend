@@ -63,8 +63,8 @@ class GoogleAdsService
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode(['query' => $gaqlQuery]),
-            CURLOPT_TIMEOUT => 60,
-            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TIMEOUT => 10,
+            CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_HTTPHEADER => [
                 'Content-Type: application/json',
                 'Authorization: Bearer ' . $accessToken,
@@ -142,7 +142,8 @@ class GoogleAdsService
             metrics.conversions_value,
             metrics.ctr,
             metrics.average_cpc,
-            metrics.cost_per_conversion
+            metrics.cost_per_conversion,
+            metrics.phone_calls
         FROM campaign
         WHERE campaign.status != 'REMOVED'
             AND segments.date DURING {$dateRange}
@@ -161,6 +162,7 @@ class GoogleAdsService
             $convValue = floatval($metrics['conversionsValue'] ?? 0);
             $roas = $spend > 0 ? round($convValue / $spend, 2) : 0;
             $cpa = $conversions > 0 ? round($spend / $conversions, 2) : 0;
+            $phoneCalls = intval($metrics['phoneCalls'] ?? 0);
 
             $channelType = $campaign['advertisingChannelType'] ?? 'SEARCH';
             $type = match ($channelType) {
@@ -191,6 +193,7 @@ class GoogleAdsService
                 'revenue' => round($convValue, 2),
                 'cpa' => $cpa,
                 'roas' => $roas,
+                'phone_calls' => $phoneCalls,
                 'avg_cpc' => ($metrics['averageCpc'] ?? 0) / 1000000,
             ];
         }

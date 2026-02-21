@@ -15,3 +15,11 @@ Route::get('/notes', [DashboardController::class, 'notes'])->name('dashboard.not
 Route::get('/google/connect', [GoogleAuthController::class, 'redirect'])->name('google.connect');
 Route::get('/google/callback', [GoogleAuthController::class, 'callback'])->name('google.callback');
 Route::get('/google/status', [GoogleAuthController::class, 'status'])->name('google.status');
+
+// API endpoints for async data loading
+Route::get('/api/overview', [DashboardController::class, 'apiOverview'])->name('api.overview');
+Route::get('/api/campaigns', [DashboardController::class, 'apiCampaigns'])->name('api.campaigns');
+Route::get('/api/keywords', [DashboardController::class, 'apiKeywords'])->name('api.keywords');
+Route::get('/api/notes', [DashboardController::class, 'apiNotesList'])->name('api.notes.list');
+Route::post('/api/notes', [DashboardController::class, 'apiNotesStore'])->name('api.notes.store');
+Route::delete('/api/notes/{id}', [DashboardController::class, 'apiNotesDelete'])->name('api.notes.delete');

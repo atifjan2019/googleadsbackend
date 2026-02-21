@@ -180,128 +180,116 @@
 
     @push('scripts')
         <script>
-            const chartData = @json($chartData);
-            const clientsData = @json($clients);
+            let chartData = @json($chartData);
+            let clientsData = @json($clients);
+            let revenueChartInstance = null;
+            let channelChartInstance = null;
 
-            document.addEventListener('DOMContentLoaded', function () {
-                // Revenue vs Spend chart
+            function formatNumber(n) {
+                return n.toLocaleString('en-GB');
+            }
+
+            function updateKpis(kpis) {
+                const kpiValues = document.querySelectorAll('.kpi-value');
+                if (kpiValues[0]) kpiValues[0].textContent = '£' + formatNumber(kpis.total_spend);
+                if (kpiValues[1]) kpiValues[1].textContent = kpis.total_conversions;
+                if (kpiValues[2]) kpiValues[2].textContent = '£' + kpis.avg_cpa;
+                if (kpiValues[3]) kpiValues[3].textContent = kpis.overall_roas + 'x';
+            }
+
+            function updateClientTable(clients) {
+                const tbody = document.querySelector('#clientTable tbody');
+                if (!tbody) return;
+                tbody.innerHTML = '';
+
+                clients.forEach(client => {
+                    const statusLabel = client.status === 'active' ? '🟢 Performing' : (client.status === 'warning' ? '🟡 Attention' : '🔴 Underperforming');
+                    const avatarColor = client.status === 'active' ? '#EE314F' : (client.status === 'warning' ? '#f59e0b' : '#ef4444');
+                    const roasClass = client.roas >= 4 ? 'high' : (client.roas >= 2 ? 'medium' : 'low');
+                    const budgetPct = client.budget > 0 ? Math.round((client.spend / client.budget) * 100) : 0;
+                    const budgetClass = budgetPct > 90 ? 'danger' : (budgetPct > 70 ? 'warning' : 'ok');
+
+                    tbody.innerHTML += `<tr>
+                        <td><div class="client-cell">
+                            <div class="client-avatar" style="background:${avatarColor}">${client.name.charAt(0).toUpperCase()}</div>
+                            <div><div class="client-name">${client.name}</div><div class="client-industry">${client.industry || ''}</div></div>
+                        </div></td>
+                        <td><span class="status-badge ${client.status}">${statusLabel}</span></td>
+                        <td class="number">£${formatNumber(client.spend)}</td>
+                        <td class="number">${formatNumber(client.clicks)}</td>
+                        <td class="number">${client.conversions}</td>
+                        <td class="number">£${client.cpa.toFixed(2)}</td>
+                        <td><span class="roas-badge ${roasClass}">${client.roas}x</span></td>
+                        <td><div class="budget-bar-cell">
+                            <div class="budget-bar"><div class="budget-fill ${budgetClass}" style="width:${Math.min(budgetPct,100)}%"></div></div>
+                            <span class="budget-pct">${budgetPct}%</span>
+                        </div></td>
+                    </tr>`;
+                });
+            }
+
+            function renderCharts(data, clients) {
                 const rvCtx = document.getElementById('revenueChart');
-                if (rvCtx) {
-                    new Chart(rvCtx, {
+                if (rvCtx && data.labels.length) {
+                    if (revenueChartInstance) revenueChartInstance.destroy();
+                    revenueChartInstance = new Chart(rvCtx, {
                         type: 'line',
                         data: {
-                            labels: chartData.labels,
+                            labels: data.labels,
                             datasets: [
-                                {
-                                    label: 'Revenue',
-                                    data: chartData.revenue,
-                                    borderColor: '#EE314F',
-                                    backgroundColor: 'rgba(238, 49, 79, 0.08)',
-                                    fill: true,
-                                    tension: 0.4,
-                                    borderWidth: 2.5,
-                                    pointRadius: 4,
-                                    pointBackgroundColor: '#EE314F',
-                                },
-                                {
-                                    label: 'Spend',
-                                    data: chartData.spend,
-                                    borderColor: '#1e1e2e',
-                                    backgroundColor: 'rgba(30, 30, 46, 0.05)',
-                                    fill: true,
-                                    tension: 0.4,
-                                    borderWidth: 2.5,
-                                    pointRadius: 4,
-                                    pointBackgroundColor: '#1e1e2e',
-                                },
+                                { label: 'Revenue', data: data.revenue, borderColor: '#EE314F', backgroundColor: 'rgba(238,49,79,0.08)', fill: true, tension: 0.4, borderWidth: 2.5, pointRadius: 4, pointBackgroundColor: '#EE314F' },
+                                { label: 'Spend', data: data.spend, borderColor: '#1e1e2e', backgroundColor: 'rgba(30,30,46,0.05)', fill: true, tension: 0.4, borderWidth: 2.5, pointRadius: 4, pointBackgroundColor: '#1e1e2e' },
                             ],
                         },
                         options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: { display: false },
-                                tooltip: {
-                                    backgroundColor: '#1e1e2e',
-                                    padding: 12,
-                                    titleFont: { family: 'Inter', size: 13 },
-                                    bodyFont: { family: 'Inter', size: 12 },
-                                    callbacks: {
-                                        label: (ctx) => `${ctx.dataset.label}: £${ctx.parsed.y.toLocaleString()}`
-                                    }
-                                }
-                            },
-                            scales: {
-                                y: {
-                                    beginAtZero: true,
-                                    grid: { color: 'rgba(0,0,0,0.04)' },
-                                    ticks: {
-                                        font: { family: 'Inter', size: 11 },
-                                        callback: (v) => '£' + (v / 1000).toFixed(0) + 'k'
-                                    }
-                                },
-                                x: {
-                                    grid: { display: false },
-                                    ticks: { font: { family: 'Inter', size: 11 } }
-                                }
-                            }
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1e1e2e', padding: 12, callbacks: { label: (ctx) => `${ctx.dataset.label}: £${ctx.parsed.y.toLocaleString()}` } } },
+                            scales: { y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { callback: (v) => '£' + (v/1000).toFixed(0) + 'k' } }, x: { grid: { display: false } } }
                         }
                     });
                 }
 
-                // Spend by Client doughnut
                 const chCtx = document.getElementById('channelChart');
-                if (chCtx) {
-                    new Chart(chCtx, {
+                if (chCtx && clients.length) {
+                    if (channelChartInstance) channelChartInstance.destroy();
+                    channelChartInstance = new Chart(chCtx, {
                         type: 'doughnut',
                         data: {
-                            labels: clientsData.map(c => c.name),
-                            datasets: [{
-                                data: clientsData.map(c => c.spend),
-                                backgroundColor: [
-                                    '#EE314F',
-                                    '#1e1e2e',
-                                    '#ff6b81',
-                                    '#555',
-                                    '#ff9eb0',
-                                    '#999',
-                                ],
-                                borderWidth: 0,
-                                hoverOffset: 6,
-                            }]
+                            labels: clients.map(c => c.name),
+                            datasets: [{ data: clients.map(c => c.spend), backgroundColor: ['#EE314F','#1e1e2e','#ff6b81','#555','#ff9eb0','#999'], borderWidth: 0, hoverOffset: 6 }]
                         },
                         options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            cutout: '68%',
-                            plugins: {
-                                legend: {
-                                    position: 'bottom',
-                                    labels: {
-                                        font: { family: 'Inter', size: 11 },
-                                        padding: 12,
-                                        usePointStyle: true,
-                                        pointStyleWidth: 8,
-                                    }
-                                },
-                                tooltip: {
-                                    backgroundColor: '#1e1e2e',
-                                    padding: 12,
-                                    titleFont: { family: 'Inter', size: 13 },
-                                    bodyFont: { family: 'Inter', size: 12 },
-                                    callbacks: {
-                                        label: (ctx) => ` £${ctx.parsed.toLocaleString()}`
-                                    }
-                                }
-                            }
+                            responsive: true, maintainAspectRatio: false, cutout: '68%',
+                            plugins: { legend: { position: 'bottom', labels: { font: { family: 'Inter', size: 11 }, padding: 12, usePointStyle: true } }, tooltip: { backgroundColor: '#1e1e2e', padding: 12, callbacks: { label: (ctx) => ` £${ctx.parsed.toLocaleString()}` } } }
                         }
                     });
                 }
+            }
+
+            document.addEventListener('DOMContentLoaded', function() {
+                // Show loading state
+                document.querySelectorAll('.kpi-value').forEach(el => el.style.opacity = '0.4');
+                const tbody = document.querySelector('#clientTable tbody');
+                if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#9ca3af;">Loading data...</td></tr>';
+
+                // Fetch data asynchronously
+                fetch('/api/overview')
+                    .then(r => r.json())
+                    .then(data => {
+                        updateKpis(data.kpis);
+                        updateClientTable(data.clients);
+                        renderCharts(data.chartData, data.clients);
+                        document.querySelectorAll('.kpi-value').forEach(el => el.style.opacity = '1');
+                    })
+                    .catch(err => {
+                        console.error('Failed to load data:', err);
+                        if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#ef4444;">Failed to load data. Please refresh.</td></tr>';
+                    });
 
                 // Client search filter
                 const searchInput = document.getElementById('clientSearch');
                 if (searchInput) {
-                    searchInput.addEventListener('input', function () {
+                    searchInput.addEventListener('input', function() {
                         const q = this.value.toLowerCase();
                         document.querySelectorAll('#clientTable tbody tr').forEach(row => {
                             const name = row.querySelector('.client-name')?.textContent.toLowerCase() || '';
@@ -310,6 +298,52 @@
                     });
                 }
             });
+
+            // Global refresh function for the Refresh button
+            function refreshData() {
+                const btn = document.getElementById('refreshDataBtn');
+                const icon = document.getElementById('refreshIcon');
+                const syncStatus = document.getElementById('syncStatus');
+
+                btn.disabled = true;
+                btn.style.opacity = '0.6';
+                icon.style.animation = 'spin 1s linear infinite';
+
+                // Add spin animation
+                if (!document.getElementById('spinStyle')) {
+                    const style = document.createElement('style');
+                    style.id = 'spinStyle';
+                    style.textContent = '@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
+                    document.head.appendChild(style);
+                }
+
+                syncStatus.textContent = 'Refreshing...';
+
+                document.querySelectorAll('.kpi-value').forEach(el => el.style.opacity = '0.4');
+                const tbody = document.querySelector('#clientTable tbody');
+                if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#9ca3af;">Refreshing data...</td></tr>';
+
+                fetch('/api/overview?fresh=1')
+                    .then(r => r.json())
+                    .then(data => {
+                        updateKpis(data.kpis);
+                        updateClientTable(data.clients);
+                        renderCharts(data.chartData, data.clients);
+                        document.querySelectorAll('.kpi-value').forEach(el => el.style.opacity = '1');
+
+                        const now = new Date();
+                        syncStatus.textContent = 'Synced ' + now.toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'});
+                    })
+                    .catch(err => {
+                        console.error('Refresh failed:', err);
+                        syncStatus.textContent = 'Refresh failed';
+                    })
+                    .finally(() => {
+                        btn.disabled = false;
+                        btn.style.opacity = '1';
+                        icon.style.animation = '';
+                    });
+            }
         </script>
     @endpush
 @endsection
