@@ -53,7 +53,7 @@ class GoogleAdsService
         $accessToken = $this->getAccessToken();
         $cleanCustomerId = str_replace('-', '', $customerId);
 
-        $url = "https://googleads.googleapis.com/v16/customers/{$cleanCustomerId}/googleAds:searchStream";
+        $url = "https://googleads.googleapis.com/v23/customers/{$cleanCustomerId}/googleAds:searchStream";
 
         $ch = curl_init();
         curl_setopt_array($ch, [
@@ -75,7 +75,7 @@ class GoogleAdsService
 
         if ($httpCode !== 200) {
             $error = json_decode($response, true);
-            \Log::error('Google Ads API Error', ['code' => $httpCode, 'response' => $error]);
+            \Log::error('Google Ads API Error', ['code' => $httpCode, 'url' => $url, 'response' => $response]);
             return [];
         }
 
@@ -102,7 +102,7 @@ class GoogleAdsService
         $accessToken = $this->getAccessToken();
         $cleanManagerId = str_replace('-', '', $this->managerAccountId);
 
-        $url = "https://googleads.googleapis.com/v16/customers/{$cleanManagerId}/googleAds:searchStream";
+        $url = "https://googleads.googleapis.com/v23/customers/{$cleanManagerId}/googleAds:searchStream";
 
         $gaql = "SELECT customer_client.id, customer_client.descriptive_name, customer_client.status, customer_client.manager FROM customer_client WHERE customer_client.status = 'ENABLED' AND customer_client.manager = false";
 
