@@ -202,7 +202,8 @@
                 if (!tbody) return;
                 tbody.innerHTML = '';
 
-                clients.forEach(client => {
+                const activeClients = clients.filter(c => c.status !== 'paused');
+                activeClients.forEach(client => {
                     const statusLabel = client.status === 'active' ? '🟢 Performing' : (client.status === 'warning' ? '🟡 Attention' : '🔴 Underperforming');
                     const avatarColor = client.status === 'active' ? '#EE314F' : (client.status === 'warning' ? '#f59e0b' : '#ef4444');
                     const roasClass = client.roas >= 4 ? 'high' : (client.roas >= 2 ? 'medium' : 'low');
