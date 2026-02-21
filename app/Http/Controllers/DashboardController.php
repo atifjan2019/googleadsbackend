@@ -74,29 +74,39 @@ class DashboardController extends Controller
     }
 
     /**
-     * API endpoint: returns overview data as JSON (cached for 15 minutes).
-     * Pass ?fresh=1 to bypass cache.
+     * API endpoint: returns overview data as JSON.
+     * Data is persisted in SQLite. Pass ?fresh=1 to force a new API call.
      */
     public function apiOverview(Request $request)
     {
         $dateRange = $this->getDateRange($request);
-        $cacheKey = 'overview_data_' . $dateRange;
+        $cacheKey = 'overview_' . $dateRange;
+        $forceFresh = $request->get('fresh');
 
-        // Clear cache if fresh data requested
-        if ($request->get('fresh')) {
-            Cache::forget($cacheKey);
+        // If not forced fresh, try SQLite cache first
+        if (!$forceFresh && ApiCache::isFresh($cacheKey, 60)) {
+            return response()->json(ApiCache::getCached($cacheKey));
         }
 
-        $data = Cache::remember($cacheKey, now()->addHour(), function () use ($dateRange) {
-            if ($this->useLiveData) {
-                try {
-                    return $this->fetchLiveOverviewData($dateRange);
-                } catch (\Exception $e) {
-                    \Log::error('Google Ads API error: ' . $e->getMessage());
-                }
+        // Fetch fresh data
+        $data = null;
+        if ($this->useLiveData) {
+            try {
+                $data = $this->fetchLiveOverviewData($dateRange);
+            } catch (\Exception $e) {
+                \Log::error('Google Ads API error: ' . $e->getMessage());
             }
-            return $this->getMockOverviewData();
-        });
+        }
+
+        // If API failed, try serving stale cache
+        if (!$data) {
+            $stale = ApiCache::getCached($cacheKey);
+            if ($stale) return response()->json($stale);
+            $data = $this->getMockOverviewData();
+        }
+
+        // Save to SQLite (replaces old data)
+        ApiCache::setCache($cacheKey, $data);
 
         return response()->json($data);
     }
@@ -350,40 +360,45 @@ class DashboardController extends Controller
     {
         $dateRange = $this->getDateRange($request);
         $clientId = $request->get('client', 'all');
-        $cacheKey = 'campaigns_data_' . $dateRange . '_' . $clientId;
+        $cacheKey = 'campaigns_' . $dateRange . '_' . $clientId;
+        $forceFresh = $request->get('fresh');
 
-        if ($request->get('fresh')) {
-            Cache::forget($cacheKey);
+        if (!$forceFresh && ApiCache::isFresh($cacheKey, 60)) {
+            return response()->json(ApiCache::getCached($cacheKey));
         }
 
-        $data = Cache::remember($cacheKey, now()->addHour(), function () use ($dateRange, $clientId) {
-            if ($this->useLiveData) {
-                try {
-                    $accounts = $this->googleAds->getCustomerAccounts();
-                    $allCampaigns = [];
+        $data = null;
+        if ($this->useLiveData) {
+            try {
+                $accounts = $this->googleAds->getCustomerAccounts();
+                $allCampaigns = [];
 
-                    $targetAccounts = $clientId !== 'all'
-                        ? array_filter($accounts, fn($a) => $a['id'] == $clientId)
-                        : $accounts;
+                $targetAccounts = $clientId !== 'all'
+                    ? array_filter($accounts, fn($a) => $a['id'] == $clientId)
+                    : $accounts;
 
-                    foreach ($targetAccounts as $account) {
-                        $campaigns = $this->googleAds->getCampaignPerformance($account['id'], $dateRange);
-                        foreach ($campaigns as &$c) {
-                            $c['client_id'] = $account['id'];
-                            $c['client_name'] = $account['name'];
-                        }
-                        $allCampaigns = array_merge($allCampaigns, $campaigns);
+                foreach ($targetAccounts as $account) {
+                    $campaigns = $this->googleAds->getCampaignPerformance($account['id'], $dateRange);
+                    foreach ($campaigns as &$c) {
+                        $c['client_id'] = $account['id'];
+                        $c['client_name'] = $account['name'];
                     }
-
-                    return ['clients' => $accounts, 'campaigns' => $allCampaigns];
-                } catch (\Exception $e) {
-                    \Log::error('Google Ads API error: ' . $e->getMessage());
+                    $allCampaigns = array_merge($allCampaigns, $campaigns);
                 }
+
+                $data = ['clients' => $accounts, 'campaigns' => $allCampaigns];
+            } catch (\Exception $e) {
+                \Log::error('Google Ads API error: ' . $e->getMessage());
             }
+        }
 
-            return ['clients' => $this->getMockClients(), 'campaigns' => $this->getMockCampaigns()];
-        });
+        if (!$data) {
+            $stale = ApiCache::getCached($cacheKey);
+            if ($stale) return response()->json($stale);
+            $data = ['clients' => $this->getMockClients(), 'campaigns' => $this->getMockCampaigns()];
+        }
 
+        ApiCache::setCache($cacheKey, $data);
         return response()->json($data);
     }
 
@@ -402,48 +417,48 @@ class DashboardController extends Controller
     {
         $dateRange = $this->getDateRange($request);
         $customerId = $request->get('customer_id', '');
-        $cacheKey = 'keywords_data_' . $dateRange . '_' . $customerId;
+        $cacheKey = 'keywords_' . $dateRange . '_' . $customerId;
+        $forceFresh = $request->get('fresh');
 
-        if ($request->get('fresh')) {
-            Cache::forget($cacheKey);
+        if (!$forceFresh && ApiCache::isFresh($cacheKey, 60)) {
+            return response()->json(ApiCache::getCached($cacheKey));
         }
 
-        $data = Cache::remember($cacheKey, now()->addHour(), function () use ($dateRange, $customerId) {
-            if ($this->useLiveData && $customerId) {
-                try {
-                    $kws = $this->googleAds->getKeywordPerformance($customerId, $dateRange);
+        $data = null;
+        if ($this->useLiveData && $customerId) {
+            try {
+                $kws = $this->googleAds->getKeywordPerformance($customerId, $dateRange);
+                $allCpas = array_column($kws['top'], 'cpa');
+                $allQs = array_filter(array_column($kws['top'], 'qs'));
 
-                    $totalWasted = array_sum(array_column($kws['wasted'], 'spend'));
-                    $allCpas = array_column($kws['top'], 'cpa');
-                    $allQs = array_filter(array_column($kws['top'], 'qs'));
-
-                    return [
-                        'keywords' => $kws,
-                        'kpis' => [
-                            'top_count' => count($kws['top']),
-                            'avg_cpc' => '£' . (count($allCpas) > 0 ? number_format(array_sum($allCpas) / count($allCpas), 2) : '0.00'),
-                            'wasted_spend' => '£' . number_format($totalWasted),
-                            'avg_qs' => count($allQs) > 0 ? number_format(array_sum($allQs) / count($allQs), 1) : 'N/A',
-                        ],
-                    ];
-                } catch (\Exception $e) {
-                    \Log::error('Google Ads API error: ' . $e->getMessage());
-                }
+                $data = [
+                    'keywords' => $kws,
+                    'kpis' => [
+                        'top_count' => count($kws['top']),
+                        'avg_cpc' => '£' . (count($allCpas) > 0 ? number_format(array_sum($allCpas) / count($allCpas), 2) : '0.00'),
+                        'avg_qs' => count($allQs) > 0 ? number_format(array_sum($allQs) / count($allQs), 1) : 'N/A',
+                    ],
+                ];
+            } catch (\Exception $e) {
+                \Log::error('Google Ads API error: ' . $e->getMessage());
             }
+        }
 
-            // Mock data
+        if (!$data) {
+            $stale = ApiCache::getCached($cacheKey);
+            if ($stale) return response()->json($stale);
             $kws = $this->getMockKeywords();
-            return [
+            $data = [
                 'keywords' => $kws,
                 'kpis' => [
                     'top_count' => count($kws['top']),
                     'avg_cpc' => '£2.14',
-                    'wasted_spend' => '£' . number_format(array_sum(array_column($kws['wasted'], 'spend'))),
                     'avg_qs' => '7.2',
                 ],
             ];
-        });
+        }
 
+        ApiCache::setCache($cacheKey, $data);
         return response()->json($data);
     }
 
