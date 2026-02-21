@@ -7,13 +7,13 @@ use Google_Client;
 class GoogleAdsService
 {
     private Google_Client $client;
-    private string $developerToken;
-    private string $managerAccountId;
+    private string $developerToken = '';
+    private string $managerAccountId = '';
 
     public function __construct()
     {
-        $this->developerToken = config('services.google.developer_token');
-        $this->managerAccountId = config('services.google.manager_account_id');
+        $this->developerToken = config('services.google.developer_token', '');
+        $this->managerAccountId = config('services.google.manager_account_id', '');
     }
 
     private function getClient(): Google_Client
