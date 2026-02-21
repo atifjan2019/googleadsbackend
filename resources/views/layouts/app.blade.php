@@ -112,6 +112,7 @@
                 </div>
             </div>
             <div class="top-bar-right">
+                @if(request()->routeIs('dashboard.overview'))
                 <div class="date-filter">
                     <select id="dateRange" class="date-select">
                         <option value="today">Today</option>
@@ -120,6 +121,7 @@
                         <option value="90days">Last 90 Days</option>
                     </select>
                 </div>
+                @endif
                 <div class="last-synced">
                     <span class="sync-dot"></span>
                     <span id="syncStatus">Synced just now</span>

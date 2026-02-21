@@ -266,14 +266,20 @@
                 }
             }
 
-            document.addEventListener('DOMContentLoaded', function() {
-                // Show loading state
+            function getRange() {
+                const sel = document.getElementById('dateRange');
+                return sel ? sel.value : 'LAST_7_DAYS';
+            }
+
+            function loadOverviewData(fresh) {
                 document.querySelectorAll('.kpi-value').forEach(el => el.style.opacity = '0.4');
                 const tbody = document.querySelector('#clientTable tbody');
                 if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#9ca3af;">Loading data...</td></tr>';
 
-                // Fetch data asynchronously
-                fetch('/api/overview')
+                let url = '/api/overview?range=' + getRange();
+                if (fresh) url += '&fresh=1';
+
+                fetch(url)
                     .then(r => r.json())
                     .then(data => {
                         updateKpis(data.kpis);
@@ -285,8 +291,15 @@
                         console.error('Failed to load data:', err);
                         if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#ef4444;">Failed to load data. Please refresh.</td></tr>';
                     });
+            }
 
-                // Client search filter
+            document.addEventListener('DOMContentLoaded', function() {
+                renderCharts(chartData, clientsData);
+                loadOverviewData(false);
+
+                const dateRange = document.getElementById('dateRange');
+                if (dateRange) dateRange.addEventListener('change', () => loadOverviewData(true));
+
                 const searchInput = document.getElementById('clientSearch');
                 if (searchInput) {
                     searchInput.addEventListener('input', function() {
@@ -323,7 +336,7 @@
                 const tbody = document.querySelector('#clientTable tbody');
                 if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#9ca3af;">Refreshing data...</td></tr>';
 
-                fetch('/api/overview?fresh=1')
+                fetch('/api/overview?range=' + getRange() + '&fresh=1')
                     .then(r => r.json())
                     .then(data => {
                         updateKpis(data.kpis);

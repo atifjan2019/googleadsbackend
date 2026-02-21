@@ -14,12 +14,21 @@ class GoogleAdsService
     {
         $this->developerToken = config('services.google.developer_token');
         $this->managerAccountId = config('services.google.manager_account_id');
+    }
 
-        $this->client = new Google_Client();
-        $this->client->setClientId(config('services.google.client_id'));
-        $this->client->setClientSecret(config('services.google.client_secret'));
-        $this->client->setAccessType('offline');
-        $this->client->refreshToken(config('services.google.refresh_token'));
+    private function getClient(): Google_Client
+    {
+        // Check if the client property has been initialized.
+        // For typed properties, checking with `isset` is more appropriate than `!$this->client`
+        // as `$this->client` would throw an error if accessed before initialization.
+        if (!isset($this->client)) {
+            $this->client = new Google_Client();
+            $this->client->setClientId(config('services.google.client_id'));
+            $this->client->setClientSecret(config('services.google.client_secret'));
+            $this->client->setAccessType('offline');
+            $this->client->refreshToken(config('services.google.refresh_token'));
+        }
+        return $this->client;
     }
 
     /**
@@ -37,10 +46,11 @@ class GoogleAdsService
      */
     private function getAccessToken(): string
     {
-        $token = $this->client->getAccessToken();
-        if ($this->client->isAccessTokenExpired()) {
-            $this->client->fetchAccessTokenWithRefreshToken();
-            $token = $this->client->getAccessToken();
+        $client = $this->getClient();
+        $token = $client->getAccessToken();
+        if ($client->isAccessTokenExpired()) {
+            $client->fetchAccessTokenWithRefreshToken();
+            $token = $client->getAccessToken();
         }
         return $token['access_token'];
     }
